@@ -35,6 +35,12 @@ make CROSS_COMPILE=arm-buildroot-linux-gnueabihf- -j8
 The output is `u-boot.bin`. A clean build is about 596 KB and fits the MX64
 `U-boot` NAND partition.
 
+The stock tree forces `-msoft-float`; this repo lets the toolchain float ABI
+match its libgcc. The tested Bootlin `eabihf` toolchain therefore produces a
+hard-float ABI binary, but U-Boot itself uses no floating point. Use a
+soft-float GCC 5 toolchain if strict ABI compatibility with the stock image is
+required.
+
 `kingpin_nand_config` is a normal target in this tree; the accidental empty
 marker file from the stock tarball has been removed.
 
