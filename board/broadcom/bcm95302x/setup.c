@@ -139,6 +139,8 @@ int usb_boot(void)
 			continue;
 		}
 
+		run_command("usb info", 0);
+
 		for (bus = 0; bus < 2 && ret; bus++) {
 			for (j = 0; j < 2; j++) {
 				char cmd[256];

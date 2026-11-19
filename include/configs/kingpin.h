@@ -10,7 +10,7 @@
 
 #define STDK_BUILD (1)
 
-#define UBOOT_TAG "mx64-2022.10-diag-v1"
+#define UBOOT_TAG "mx64-ng-2012.10-v1"
 #define BUILD_TAG UBOOT_TAG
 #define CONFIG_MX64_DEFAULT_ETHADDR "00:18:0a:00:01:02"
 
