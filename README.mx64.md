@@ -15,6 +15,12 @@ diagnostics.
 The initial commit is the unmodified stock tree. The clayface board-support
 changes are kept as a separate import commit so the delta remains reviewable.
 
+## Branches
+
+- `main` - stock + clayface board support + networking/TFTP/diagnostics
+- `stock` - unmodified 20190430 source import
+- `clayface-import` - stock plus the imported clayface board support
+
 ## Build
 
 Use a Linux/WSL shell. The tested toolchain is Bootlin
