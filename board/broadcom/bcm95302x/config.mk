@@ -12,3 +12,6 @@ ifdef CONFIG_CUSTOM_LINKER_SCRIPT
 LDSCRIPT := $(SRCTREE)/board/$(BOARDDIR)/u-boot-custom.lds
 endif
 #PLATFORM_RELFLAGS += -DSVN_REVISION=' " $(SVN_REV)"'
+
+# Keep U-Boot's float ABI consistent with the toolchain's libgcc.
+PLATFORM_RELFLAGS := $(filter-out -msoft-float,$(PLATFORM_RELFLAGS))

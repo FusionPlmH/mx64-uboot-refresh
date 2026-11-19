@@ -59,7 +59,7 @@ extern uchar isTftpComplete;
 /*
  * Board-specific Platform code can reimplement show_boot_progress () if needed
  */
-void inline __show_boot_progress (int val) {}
+void __show_boot_progress (int val) {}
 void show_boot_progress (int val) __attribute__((weak, alias("__show_boot_progress")));
 
 #if defined(CONFIG_UPDATE_TFTP)
@@ -92,7 +92,7 @@ int do_mdm_init = 0;
 extern void mdm_init(void); /* defined in board.c */
 #endif
 
-void inline __pre_command_hook (void) {}
+void __pre_command_hook (void) {}
 void pre_command_hook (void) __attribute__((weak, alias("__pre_command_hook")));
 
 
