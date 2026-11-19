@@ -150,6 +150,7 @@ void pre_command_hook(void)
 	led_set_rgb(255, 0, 0);
 }
 */
+#ifndef CONFIG_CMD_NET
 void
 NetReceive(uchar *inpkt, int len)
 {
@@ -164,6 +165,7 @@ int eth_register(struct eth_device *dev)
 {
    return 0;
 }
+#endif /* !CONFIG_CMD_NET */
 /*
 char *getenv(const char *name)
 { return NULL; }

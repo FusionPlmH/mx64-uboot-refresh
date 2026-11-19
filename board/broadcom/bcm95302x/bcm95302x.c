@@ -153,6 +153,10 @@ int board_eth_init(bd_t *bis)
 {
 	int rc = -1;
 #ifdef CONFIG_BCMIPROC_ETH
+#ifdef CONFIG_MX64_DEFAULT_ETHADDR
+	if (!getenv("ethaddr"))
+		setenv("ethaddr", CONFIG_MX64_DEFAULT_ETHADDR);
+#endif
 	printf("Registering eth\n");
 	rc = bcmiproc_eth_register(0);
 #endif

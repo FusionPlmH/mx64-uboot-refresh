@@ -10,6 +10,10 @@
 
 #define STDK_BUILD (1)
 
+#define UBOOT_TAG "mx64-2022.10-diag-v1"
+#define BUILD_TAG UBOOT_TAG
+#define CONFIG_MX64_DEFAULT_ETHADDR "00:18:0a:00:01:02"
+
 /* Architecture, CPU, etc */
 #define CONFIG_ARMV7
 #define CONFIG_IPROC (1)
@@ -105,7 +109,7 @@ When DEBUG is enabled, need to disable both CACHE to make u-boot running
 #define CONFIG_SYS_MAXARGS			64
 #define CONFIG_SYS_BARGSIZE		CONFIG_SYS_CBSIZE
 
-//#define CONFIG_VERSION_VARIABLE	/* Enabled UBOOT build date/time id string */
+#define CONFIG_VERSION_VARIABLE	/* Enabled UBOOT build date/time id string */
 #define CONFIG_AUTO_COMPLETE
 #define CONFIG_SYS_HUSH_PARSER
 #define CONFIG_SYS_PROMPT_HUSH_PS2	"> "
@@ -124,7 +128,9 @@ When DEBUG is enabled, need to disable both CACHE to make u-boot running
 #define CONFIG_CMD_CONSOLE
 //#define CONFIG_CMD_NFS
 //#undef CONFIG_GENERIC_MMC
-//#define CONFIG_CMD_PING
+#define CONFIG_CMD_PING
+#define CONFIG_CMD_DHCP
+#define CONFIG_CMD_MII
 #define CONFIG_CMD_MEMORY
 #define CONFIG_CMD_MISC
 //#define CONFIG_CMD_LICENSE
@@ -142,7 +148,7 @@ When DEBUG is enabled, need to disable both CACHE to make u-boot running
 #ifdef UBOOT_MDK
 #define CONFIG_GMAC_NUM		2 
 #else
-#define CONFIG_GMAC_NUM		2
+#define CONFIG_GMAC_NUM		1
 #endif /* UBOOT_MDK */
 
 /* Environment variables */
@@ -263,7 +269,7 @@ When DEBUG is enabled, need to disable both CACHE to make u-boot running
 
 //#define MERAKI_AUTOBOOT_CMD 	"sleep 3; mx64init; usbload; nand read 0x60008000 0x100000 0x300000; bootbk 0x60008000 bootkernel2"
 #define CONFIG_BOOTCOMMAND     "run soc_dtscheck; mx64init; run ubi_checkboot; run usb_checkboot; run meraki_checkboot"
-#define CONFIG_IDENT_STRING   "Meraki MX64 Boot Kernel Loader"
+#define CONFIG_IDENT_STRING   "Meraki MX64 Boot Kernel Loader " UBOOT_TAG
 
 #define CONFIG_EXTRA_ENV_SETTINGS \
        "ubi_boot=ubi part ubi && ubi read ${loadaddr} kernel && bootm ${loadaddr}#${config_dts}\0" \
@@ -277,6 +283,10 @@ When DEBUG is enabled, need to disable both CACHE to make u-boot running
         "disable_ubi_boot=0\0" \
         "enable_usb_boot=1\0" \
         "enable_meraki_boot=0\0" \
+        "uboot_tag=" UBOOT_TAG "\0" \
+        "ethaddr=" CONFIG_MX64_DEFAULT_ETHADDR "\0" \
+        "gmac=1\0" \
+        "tftp_boot=run soc_dtscheck; if test $config_dts = config@2; then setenv tftp_file ${initramfs_filename_a0}; else setenv tftp_file ${initramfs_filename}; fi; setenv ipaddr 192.168.1.10; setenv serverip 192.168.1.2; setenv netmask 255.255.255.0; tftpboot ${loadaddr} ${tftp_file} && bootm ${loadaddr}#${config_dts}\0" \
         "mtdparts=" MTDPARTS_DEFAULT "\0" \
         "soc_dtscheck=if test -n config_dts; then getsocrev; if test $? = 1 ; then setenv config_dts config@4; else setenv config_dts config@2; fi; fi"
 
@@ -359,8 +369,8 @@ When DEBUG is enabled, need to disable both CACHE to make u-boot running
 //#undef CONFIG_CMD_MEMORY
 #undef CONFIG_SYS_VSNPRINTF
 //#undef CONFIG_CMD_UBI
-#undef CONFIG_CMD_NET
-#undef CONFIG_CMD_PING
+//#undef CONFIG_CMD_NET
+//#undef CONFIG_CMD_PING
 //#undef CONFIG_CMD_MTDPARTS
 //#undef CONFIG_MTD_DEVICE
 //#define CONFIG_SYS_NO_BOOTM

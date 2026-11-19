@@ -215,6 +215,8 @@ ethHw_Init(void)
 {
 	bcm_eth_t *eth_data = &g_eth_data;
 	int stat;
+	char *gmac;
+	unsigned long gmac_num;
 
 	ET_TRACE(("%s enter\n", __FUNCTION__));
 
@@ -223,6 +225,12 @@ ethHw_Init(void)
 
 	/* load mac number  */
 	eth_data->mac = CONFIG_GMAC_NUM;
+	gmac = getenv("gmac");
+	if (gmac) {
+		gmac_num = simple_strtoul(gmac, NULL, 10);
+		if (gmac_num <= 2)
+			eth_data->mac = gmac_num;
+	}
 
 	/* load mac address */
 	switch (eth_data->mac) {
