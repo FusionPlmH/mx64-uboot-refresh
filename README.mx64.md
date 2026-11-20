@@ -98,22 +98,22 @@ continues with the normal candidates, and each one only runs when the previous
 one failed:
 
 1. `ubi_boot` - `ubi read` the OpenWrt kernel and `bootm` it.
-2. `tftp_checkboot` - `tftp_boot`, pulling the image over the network
-   (`enable_tftp_boot=1`, default). It uses a saved `ipaddr`/`serverip` when
-   there is one, otherwise the recovery default `192.168.1.10` / `192.168.1.2`,
-   and sets `netretry=no` so a missing server fails after one try.
+2. `usb_checkboot` - `usbload`, three attempts over both buses and both
+   initramfs names (`enable_usb_boot=1`).
+3. `tftp_checkboot` - `tftp_boot`, pulling the image over the network
+   (`enable_tftp_boot=1`). It uses a saved `ipaddr`/`serverip` when there is
+   one, otherwise the recovery default `192.168.1.10` / `192.168.1.2`, and sets
+   `netretry=no` so a missing server fails after one try.
    Candidates, in order: an explicit `tftp_file` override, the OpenWrt FIT
    initramfs (`initramfs_filename[_a0]`), then the clayface `SPIM` transition
    firmware (`transition_filename[_a0]`). `bootimg` identifies each one from its
    header, so the first file that exists and boots wins.
-3. `usb_checkboot` - `usbload`, three attempts over both buses and both
-   initramfs names (`enable_usb_boot=0`, off by default; set it to 1 to bring
-   the USB path back).
 4. `meraki_checkboot` - the stock `bootkernel1/2` partitions
    (`enable_meraki_boot=0`).
 
-That chain is why an empty or corrupt NAND boots itself over TFTP (or USB when
-enabled) without anybody holding the reset button.
+That chain is why an empty or corrupt NAND boots itself from a USB stick or over
+TFTP without anybody holding the reset button. The flashing scripts in
+mx64-openwrt-flash talk TFTP by default, which does not change anything here.
 
 ### Rewriting the boot loader over TFTP
 
@@ -178,8 +178,9 @@ tries three candidates in order and boots the first one that loads:
    transition firmware).
 
 Each one goes through `bootimg`, which uses `bootm` for FIT images and `bootbk`
-for the `SPIM` transition firmware. Defaults are `enable_tftp_boot=1` and
-`enable_usb_boot=0`, so this is what an empty NAND does on its own.
+for the `SPIM` transition firmware. Both `enable_usb_boot` and
+`enable_tftp_boot` default to 1, so an empty NAND tries the USB stick first and
+the network right after it.
 
 Manual B0+ load:
 
