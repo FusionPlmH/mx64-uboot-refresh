@@ -53,7 +53,7 @@ make CROSS_COMPILE=$CROSS_COMPILE CC="${CROSS_COMPILE}gcc -mfpu=vfpv3-d16" -j8
 `config.mk` assigns `CC = $(CROSS_COMPILE)gcc`, so `CC` has to be overridden on
 the make command line (exporting it does nothing).
 
-The output is `u-boot.bin`: 591,984 bytes with GCC 13 and 596,492 bytes with
+The output is `u-boot.bin`: 591,984 bytes with GCC 13 and 597,636 bytes with
 GCC 5.4. The upstream MX6x device tree declares the `u-boot` partition as
 `0x80000` (512 KiB) while other units use `0x100000` (1 MiB), so read the real
 size (`nand info`, or `cat /proc/mtd` on a running system) before writing: never
@@ -89,12 +89,42 @@ partition at `0x800000`.
 `CONFIG_BOOTCOMMAND` runs:
 
 ```text
-run soc_dtscheck; mx64init; run ubi_checkboot; run usb_checkboot; run meraki_checkboot
+run soc_dtscheck; mx64init; run ubi_checkboot; run usb_checkboot; run tftp_checkboot; run meraki_checkboot
 ```
 
 `mx64init` enables the board peripherals and checks the reset button. If reset
-is pressed, USB boot is attempted; otherwise the normal UBI kernel boot runs.
-USB is also retried after a UBI boot failure when `enable_usb_boot=1`.
+is pressed, USB boot is attempted immediately. Without the button the boot
+continues with the normal candidates, and each one only runs when the previous
+one failed:
+
+1. `ubi_boot` - `ubi read` the OpenWrt kernel and `bootm` it.
+2. `usb_checkboot` - `usbload`, three attempts over both buses and both
+   initramfs names (`enable_usb_boot=1`).
+3. `tftp_checkboot` - `tftp_boot`, pulling the initramfs over the network using
+   `ipaddr`/`serverip` when they are already saved, otherwise the recovery
+   default `192.168.1.10` / `192.168.1.2` (`enable_tftp_boot=1`,
+   `netretry=no` so a missing server fails after one try).
+4. `meraki_checkboot` - the stock `bootkernel1/2` partitions
+   (`enable_meraki_boot=0`).
+
+That chain is why an empty or corrupt NAND boots itself from USB or TFTP without
+anybody holding the reset button.
+
+### Rewriting the boot loader over TFTP
+
+```text
+flash_uboot <tftp-file> <partition-size-hex> confirm
+```
+
+`tftpboot`s the file, refuses it unless the first word is an ARM branch
+instruction and the length fits the given partition, then `nand erase`s the
+partition, writes the image, reads it back and compares CRC32. Success prints
+`OK: ... written and verified`; a mismatch prints `VERIFY FAILED` and leaves the
+image in RAM so the write can be retried.
+
+The partition size is mandatory because the erase covers the whole partition and
+`shmoo` starts right behind a `0x80000` mtd0. Power loss during the write bricks
+the unit, so keep a serial console attached.
 
 ### Image formats
 
@@ -189,6 +219,19 @@ mx64info
 
 `mx64info` prints the build tag, SoC revision, reset state, USB settings,
 load address, DTS config, IP/MAC and GMAC selection.
+
+## Boot commands
+
+| Command | Purpose |
+|---|---|
+| `mx64init` | board init + reset button check (runs from `CONFIG_BOOTCOMMAND`) |
+| `usbload` | try the USB stick: 3 attempts, both buses, both initramfs names |
+| `tftp_boot` | pull the initramfs over TFTP and hand it to `bootimg` |
+| `bootimg <addr> [part]` | FIT/uImage -> `bootm`, Meraki `SPIM` -> relocate + `bootbk` |
+| `bootbk <addr> <part>` | start a Meraki bootkernel (header CRC32 checked) |
+| `flash_uboot <file> <size-hex> confirm` | TFTP + erase + write + read back verify of the boot loader |
+| `getsocrev` | exit code 1 on B0+, 0 on A0 (used by `soc_dtscheck`) |
+| `mx64info` | dump build/board state |
 
 ## Flashing warning
 
