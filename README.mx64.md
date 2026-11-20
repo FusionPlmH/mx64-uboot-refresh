@@ -53,8 +53,8 @@ make CROSS_COMPILE=$CROSS_COMPILE CC="${CROSS_COMPILE}gcc -mfpu=vfpv3-d16" -j8
 `config.mk` assigns `CC = $(CROSS_COMPILE)gcc`, so `CC` has to be overridden on
 the make command line (exporting it does nothing).
 
-The output is `u-boot.bin`: 591,984 bytes with GCC 13 and 598,268 bytes with
-GCC 5.4 (v5). The upstream MX6x device tree declares the `u-boot` partition as
+The output is `u-boot.bin`: 591,984 bytes with GCC 13 and 598,440 bytes with
+GCC 5.4 (v6). The upstream MX6x device tree declares the `u-boot` partition as
 `0x80000` (512 KiB) while other units use `0x100000` (1 MiB), so read the real
 size (`nand info`, or `cat /proc/mtd` on a running system) before writing: never
 write an image that is larger than the partition.
