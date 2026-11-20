@@ -84,4 +84,14 @@
 #define __gcc_header(x) #x
 #define _gcc_header(x) __gcc_header(linux/compiler-gcc##x.h)
 #define gcc_header(x) _gcc_header(x)
+
+/*
+ * The kernel adds one compiler-gcc<N>.h per GCC major version.  The macros
+ * below have not changed since 4.x, so use that set for everything newer
+ * instead of failing on every new major version.
+ */
+#if __GNUC__ >= 5
+#include "compiler-gcc4.h"
+#else
 #include gcc_header(__GNUC__)
+#endif
