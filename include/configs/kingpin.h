@@ -268,7 +268,7 @@ When DEBUG is enabled, need to disable both CACHE to make u-boot running
 //#define MERAKI_AUTOBOOT_CMD   "sleep 10; nand read 0x60008000 0x500000 0x200000; bootbk 0x60008000 bootkernel2 ; nand read 0x60008000 0x100000 0x200000; bootbk 0x60008000 bootkernel1"
 
 //#define MERAKI_AUTOBOOT_CMD 	"sleep 3; mx64init; usbload; nand read 0x60008000 0x100000 0x300000; bootbk 0x60008000 bootkernel2"
-#define CONFIG_BOOTCOMMAND     "run soc_dtscheck; mx64init; run ubi_checkboot; run usb_checkboot; run tftp_checkboot; run meraki_checkboot"
+#define CONFIG_BOOTCOMMAND     "run soc_dtscheck; mx64init; run ubi_checkboot; run tftp_checkboot; run usb_checkboot; run meraki_checkboot"
 #define CONFIG_IDENT_STRING   "Meraki MX64 Boot Kernel Loader " UBOOT_TAG
 
 #define CONFIG_EXTRA_ENV_SETTINGS \
@@ -276,19 +276,22 @@ When DEBUG is enabled, need to disable both CACHE to make u-boot running
         "meraki_bootkernel2=nand read 0x60008000 0x500000 0x300000; bootbk 0x60008000 bootkernel2\0" \
         "meraki_bootkernel1=nand read 0x60008000 0x100000 0x300000; bootbk 0x60008000 bootkernel1\0" \
         "initramfs_filename=openwrt-bcm53xx-generic-meraki_mx64-initramfs.bin\0" \
-        "initramfs_filename_a0=openwrt-bcm53xx-generic-meraki_mx64_a0-initramfs.bin\0" \
+        "initramfs_filename_a0=openwrt-bcm53xx-generic-meraki_mx64-a0-initramfs.bin\0" \
+        "transition_filename=openwrt-bcm5862x-generic-meraki_mx64-initramfs-kernel.bin\0" \
+        "transition_filename_a0=openwrt-bcm5862x-generic-meraki_mx64a0-initramfs-kernel.bin\0" \
+        "pick_tftp_files=if test $config_dts = config@2; then setenv tftp_fit ${initramfs_filename_a0}; setenv tftp_spim ${transition_filename_a0}; else setenv tftp_fit ${initramfs_filename}; setenv tftp_spim ${transition_filename}; fi\0" \
         "ubi_checkboot=if test $disable_ubi_boot != 1; then run ubi_boot ; fi\0" \
         "usb_checkboot=if test $enable_usb_boot = 1; then usbload; fi\0" \
         "tftp_checkboot=if test $enable_tftp_boot = 1; then run tftp_boot ; fi\0" \
         "meraki_checkboot=if test $enable_meraki_boot = 1; then run meraki_bootkernel2; run meraki_bootkernel1; fi\0" \
         "disable_ubi_boot=0\0" \
-        "enable_usb_boot=1\0" \
+        "enable_usb_boot=0\0" \
         "enable_tftp_boot=1\0" \
         "enable_meraki_boot=0\0" \
         "uboot_tag=" UBOOT_TAG "\0" \
         "ethaddr=" CONFIG_MX64_DEFAULT_ETHADDR "\0" \
         "gmac=1\0" \
-        "tftp_boot=run soc_dtscheck; if test $config_dts = config@2; then setenv tftp_file ${initramfs_filename_a0}; else setenv tftp_file ${initramfs_filename}; fi; if test -z \"${serverip}\"; then setenv ipaddr 192.168.1.10; setenv serverip 192.168.1.2; setenv netmask 255.255.255.0; fi; setenv netretry no; tftpboot ${loadaddr} ${tftp_file} && bootimg ${loadaddr} bootkernel1\0" \
+        "tftp_boot=run soc_dtscheck; run pick_tftp_files; if test -z \"${serverip}\"; then setenv ipaddr 192.168.1.10; setenv serverip 192.168.1.2; setenv netmask 255.255.255.0; fi; setenv netretry no; if test -n \"${tftp_file}\"; then echo TFTP override: ${tftp_file}; tftpboot ${loadaddr} ${tftp_file} && bootimg ${loadaddr} bootkernel1; fi; echo TFTP: ${tftp_fit}; tftpboot ${loadaddr} ${tftp_fit} && bootimg ${loadaddr} bootkernel1; echo TFTP: ${tftp_spim}; tftpboot ${loadaddr} ${tftp_spim} && bootimg ${loadaddr} bootkernel1\0" \
         "mtdparts=" MTDPARTS_DEFAULT "\0" \
         "soc_dtscheck=if test -z \"${config_dts}\"; then getsocrev; if test $? = 1; then setenv config_dts config@4; else setenv config_dts config@2; fi; fi\0"
 
