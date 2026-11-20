@@ -53,7 +53,7 @@ make CROSS_COMPILE=$CROSS_COMPILE CC="${CROSS_COMPILE}gcc -mfpu=vfpv3-d16" -j8
 `config.mk` assigns `CC = $(CROSS_COMPILE)gcc`, so `CC` has to be overridden on
 the make command line (exporting it does nothing).
 
-The output is `u-boot.bin`: 591,984 bytes with GCC 13 and 597,636 bytes with
+The output is `u-boot.bin`: 591,984 bytes with GCC 13 and 598,172 bytes with
 GCC 5.4. The upstream MX6x device tree declares the `u-boot` partition as
 `0x80000` (512 KiB) while other units use `0x100000` (1 MiB), so read the real
 size (`nand info`, or `cat /proc/mtd` on a running system) before writing: never
@@ -89,7 +89,7 @@ partition at `0x800000`.
 `CONFIG_BOOTCOMMAND` runs:
 
 ```text
-run soc_dtscheck; mx64init; run ubi_checkboot; run usb_checkboot; run tftp_checkboot; run meraki_checkboot
+run soc_dtscheck; mx64init; run ubi_checkboot; run tftp_checkboot; run usb_checkboot; run meraki_checkboot
 ```
 
 `mx64init` enables the board peripherals and checks the reset button. If reset
@@ -98,17 +98,22 @@ continues with the normal candidates, and each one only runs when the previous
 one failed:
 
 1. `ubi_boot` - `ubi read` the OpenWrt kernel and `bootm` it.
-2. `usb_checkboot` - `usbload`, three attempts over both buses and both
-   initramfs names (`enable_usb_boot=1`).
-3. `tftp_checkboot` - `tftp_boot`, pulling the initramfs over the network using
-   `ipaddr`/`serverip` when they are already saved, otherwise the recovery
-   default `192.168.1.10` / `192.168.1.2` (`enable_tftp_boot=1`,
-   `netretry=no` so a missing server fails after one try).
+2. `tftp_checkboot` - `tftp_boot`, pulling the image over the network
+   (`enable_tftp_boot=1`, default). It uses a saved `ipaddr`/`serverip` when
+   there is one, otherwise the recovery default `192.168.1.10` / `192.168.1.2`,
+   and sets `netretry=no` so a missing server fails after one try.
+   Candidates, in order: an explicit `tftp_file` override, the OpenWrt FIT
+   initramfs (`initramfs_filename[_a0]`), then the clayface `SPIM` transition
+   firmware (`transition_filename[_a0]`). `bootimg` identifies each one from its
+   header, so the first file that exists and boots wins.
+3. `usb_checkboot` - `usbload`, three attempts over both buses and both
+   initramfs names (`enable_usb_boot=0`, off by default; set it to 1 to bring
+   the USB path back).
 4. `meraki_checkboot` - the stock `bootkernel1/2` partitions
    (`enable_meraki_boot=0`).
 
-That chain is why an empty or corrupt NAND boots itself from USB or TFTP without
-anybody holding the reset button.
+That chain is why an empty or corrupt NAND boots itself over TFTP (or USB when
+enabled) without anybody holding the reset button.
 
 ### Rewriting the boot loader over TFTP
 
@@ -164,9 +169,17 @@ ping 192.168.1.2
 tftp_boot
 ```
 
-`tftp_boot` runs `soc_dtscheck`, chooses the A0 or B0+ initramfs filename, loads
-it to `${loadaddr}` and hands it to `bootimg`, which uses `bootm` for FIT
-images and `bootbk` for the `SPIM` transition firmware.
+`tftp_boot` runs `soc_dtscheck`, sets the recovery IPs if none are saved, then
+tries three candidates in order and boots the first one that loads:
+
+1. `tftp_file`, if the environment sets it (manual override),
+2. `openwrt-bcm53xx-generic-meraki_mx64[-a0]-initramfs.bin`,
+3. `openwrt-bcm5862x-generic-meraki_mx64[a0]-initramfs-kernel.bin` (the `SPIM`
+   transition firmware).
+
+Each one goes through `bootimg`, which uses `bootm` for FIT images and `bootbk`
+for the `SPIM` transition firmware. Defaults are `enable_tftp_boot=1` and
+`enable_usb_boot=0`, so this is what an empty NAND does on its own.
 
 Manual B0+ load:
 
@@ -226,7 +239,7 @@ load address, DTS config, IP/MAC and GMAC selection.
 |---|---|
 | `mx64init` | board init + reset button check (runs from `CONFIG_BOOTCOMMAND`) |
 | `usbload` | try the USB stick: 3 attempts, both buses, both initramfs names |
-| `tftp_boot` | pull the initramfs over TFTP and hand it to `bootimg` |
+| `tftp_boot` | pull an image over TFTP and hand it to `bootimg`: `tftp_file` override, then the FIT initramfs, then the `SPIM` transition firmware |
 | `bootimg <addr> [part]` | FIT/uImage -> `bootm`, Meraki `SPIM` -> relocate + `bootbk` |
 | `bootbk <addr> <part>` | start a Meraki bootkernel (header CRC32 checked) |
 | `flash_uboot <file> <size-hex> confirm` | TFTP + erase + write + read back verify of the boot loader |
