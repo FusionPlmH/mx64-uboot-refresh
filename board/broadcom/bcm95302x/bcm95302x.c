@@ -17,6 +17,7 @@
 #include <asm/io.h>
 #include <asm/mach-types.h>
 #include <config.h>
+#include <environment.h>
 #include <asm/arch/iproc.h>
 #include <asm/system.h>
 #include "asm/iproc/reg_utils.h"
@@ -102,16 +103,55 @@ int board_early_init_f (void)
 	return(status);
 }
 
+/*
+ * A valid environment in NAND replaces the compiled defaults wholesale
+ * (himport_r() clears the table first), so a unit that still carries the stock
+ * Meraki environment has none of the variables the boot chain needs:
+ * soc_dtscheck, ubi_checkboot, usb_checkboot, tftp_checkboot, tftp_boot, ...
+ * Without them every "run xxx" in CONFIG_BOOTCOMMAND fails and nothing boots.
+ *
+ * Add whatever the stored environment does not define. Existing values are
+ * never touched, so the label MAC, a custom ipaddr or a saved config_dts all
+ * survive.
+ */
+static void env_fill_defaults(void)
+{
+	const char *p = (const char *)default_environment;
+	char name[64];
+	int added = 0;
+
+	while (p && *p) {
+		const char *eq = strchr(p, '=');
+		size_t len = eq ? (size_t)(eq - p) : 0;
+
+		if (eq && len > 0 && len < sizeof(name)) {
+			memcpy(name, p, len);
+			name[len] = '\0';
+			if (!getenv(name)) {
+				setenv(name, eq + 1);
+				added++;
+			}
+		}
+		p += strlen(p) + 1;
+	}
+
+	if (added)
+		printf("env: filled in %d missing default variable(s)\n", added);
+}
+
 int board_late_init (void) 
 {
 	extern ulong mmu_table_addr;    /* MMU on flash fix */
 	int status = 0;
-    
+        
 	/* MMU on flash fix */
 	asm volatile ("mcr p15, 0, %0, c2, c0, 0"::"r"(mmu_table_addr)); /*update TTBR0 */
 	asm volatile ("mcr p15, 0, r1, c8, c7, 0");  /*invalidate TLB*/
 	asm volatile ("mcr p15, 0, r1, c7, c10, 4"); /* DSB */
 	asm volatile ("mcr p15, 0, r0, c7, c5, 4"); /* ISB */		
+
+	/* must run before CONFIG_BOOTCOMMAND needs the env scripts */
+	env_fill_defaults();
     
 	/* Systick initialization(private timer)*/
 	iproc_clk_enum();
