@@ -116,8 +116,10 @@ one failed:
 That chain is why an empty or corrupt NAND boots itself from a USB stick or over
 TFTP without anybody holding the reset button. The flashing scripts in
 mx64-openwrt-flash talk TFTP by default, which does not change anything here.
-On a unit that was just written from diagnostic mode, boot it from USB once
-before relying on TFTP - the reasons are in "The first boot must come from USB".
+On a unit that was just written from diagnostic mode, the stored environment is
+the stock Meraki one; v6 fills in the missing variables at boot, so TFTP works on
+that first boot too. Keep a USB stick at hand as the fallback - the reasoning is
+in "Environment: what a freshly flashed unit is missing".
 
 ### Rewriting the boot loader over TFTP
 
@@ -213,25 +215,39 @@ pick_tftp_files=if test "x${config_dts}" = "xconfig@2"; then ...; fi
 Semantics: UBI, USB and TFTP are on unless the variable is explicitly `0`;
 Meraki boot stays opt-in.
 
-## The first boot must come from USB
-
-A unit that was just written from diagnostic mode has to be booted from the USB
-stick once. TFTP rescue works on later boots, not on that one.
+## Environment: what a freshly flashed unit is missing
 
 U-Boot reads its environment from NAND (`0x440000`, one erase block). A valid
-environment there is used **instead of** the compiled defaults; it is not merged
-per variable. So a `u-boot-env` written by an older build - or the stock Meraki
-environment that happened to survive - can hide variables this build depends on
-(`enable_tftp_boot`, `tftp_boot`, `pick_tftp_files`, ...). The USB path is the
-one that also works when only the C commands are available.
+environment there is used **instead of** the compiled defaults - `himport_r()`
+clears the table first, there is no per-variable merge. Writing mtd0 does not
+touch that partition, so a unit flashed from diagnostic mode comes up with the
+**stock Meraki environment**: no `soc_dtscheck`, no `ubi_checkboot`, no
+`usb_checkboot`, no `tftp_checkboot`, no `tftp_boot`. Every `run` in
+`CONFIG_BOOTCOMMAND` fails with "not defined" and the unit boots nothing at all,
+not even over USB.
 
-Two more reasons TFTP is the less forgiving path:
+From v6 on, `board_late_init()` walks `default_environment` and sets whatever
+the stored environment does not define, before `CONFIG_BOOTCOMMAND` runs:
+
+```text
+env: filled in 31 missing default variable(s)
+```
+
+Existing values are never overwritten, so the label MAC, a custom `ipaddr` and a
+saved `config_dts` survive. That is what makes this sequence work on a unit that
+still carries the factory environment:
+
+```text
+write mtd0 -> cold boot -> UBI (stock volumes, bootm fails) -> USB -> TFTP
+```
+
+So TFTP can be used on the very first boot. Keeping a USB stick at hand is still
+worth it, because the remaining risk is the link itself, not the environment:
 
 - `tftp_boot` sets `netretry no`. In `net/net.c:NetStartAgain()` that maps to
   `retrycnt = 0`, and `NetTryCount` starts at 1, so the first failure ends the
-  transfer attempt. Each `tftpboot` still gets the full ARP window
-  (`ARP_TIMEOUT` 5 s x `ARP_TIMEOUT_COUNT` 5), but a link that is not up yet
-  costs that whole window and then gives up.
+  transfer attempt. ARP gets `ARP_TIMEOUT` 5 s x `ARP_TIMEOUT_COUNT` 5 = 25 s
+  before that happens.
 - The bcmiproc driver never reports real link state on this board:
   `ethHw_portLinkUp()` only exists for HELIX4/KATANA2/HURRICANE2, and
   `bcmiproc_robo.c` deliberately forces the switch ports to report "link up" so
@@ -248,16 +264,17 @@ ping 192.168.1.2    <- ARP works?
 tftpboot 0x90000000 openwrt-bcm53xx-generic-meraki_mx64-initramfs.bin
 ```
 
-Missing variables mean the NAND environment is older than the binary: rewrite
-`u-boot-env` (see the flashing kit, `tools/mkenv.py`) - that does not touch
-mtd0. `ping` failing while USB works points at the switch/GMAC side; `ping`
-succeeding while `tftpboot` fails points at the server or the block size.
+Missing variables mean the NAND environment is older than the binary. v6 fills
+them in at boot, so this should not happen any more; if it does, the build is
+older or the variable is present with an unexpected value. `ping` failing while
+USB works points at the switch/GMAC side; `ping` succeeding while `tftpboot`
+fails points at the server or the block size.
 
 ## TFTP recovery
 
 Put the initramfs in the TFTP server root and connect the PC to a LAN port.
-This is the rescue path for a unit that already runs this U-Boot; the very first
-boot after writing mtd0 should come from USB (see above).
+This works on the first boot after writing mtd0 as well, because v6 fills in the
+missing environment variables (see above); USB stays the fallback.
 
 For a B0+ unit:
 
