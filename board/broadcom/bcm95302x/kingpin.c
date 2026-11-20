@@ -211,6 +211,107 @@ U_BOOT_CMD(
 	"bootimg <address> [partition-name]"
 );
 
+#ifdef CONFIG_CMD_NAND
+/*
+ * Rewrite the boot loader from a file fetched over TFTP, then read it back and
+ * compare CRCs.  The partition size has to be given explicitly: the erase
+ * covers the whole partition, and on units where mtd0 is 0x80000 the next
+ * partition (shmoo) starts right behind it.
+ */
+static int do_flash_uboot(cmd_tbl_t *cmdtp, int flag, int argc,
+			  char * const argv[])
+{
+	const char *env;
+	ulong part_size, load, verify, len;
+	uint32_t crc_ram, crc_nand;
+	char cmd[192];
+
+	if (argc < 3 || strcmp(argv[argc - 1], "confirm") != 0) {
+		printf("\nThis erases and rewrites the boot loader.\n"
+		       "  flash_uboot <tftp-file> <partition-size-hex> confirm\n"
+		       "Take the size from 'cat /proc/mtd' (mtd0) first.\n");
+		return CMD_RET_USAGE;
+	}
+
+	part_size = simple_strtoul(argv[2], NULL, 16);
+	if (part_size < 0x40000 || part_size > 0x200000 ||
+	    (part_size & 0x3ffff)) {
+		printf("Bad partition size 0x%lx (0x40000..0x200000, aligned)\n",
+		       part_size);
+		return CMD_RET_FAILURE;
+	}
+
+	env = getenv("loadaddr");
+	load = env ? simple_strtoul(env, NULL, 16) : CONFIG_LOADADDR;
+	env = getenv("verifyaddr");
+	verify = env ? simple_strtoul(env, NULL, 16) : 0x91000000;
+
+	if (!getenv("ipaddr"))
+		setenv("ipaddr", "192.168.1.10");
+	if (!getenv("serverip"))
+		setenv("serverip", "192.168.1.2");
+	setenv("netretry", "no");
+
+	snprintf(cmd, sizeof(cmd), "tftpboot %08lx %s", load, argv[1]);
+	printf("= %s\n", cmd);
+	if (run_command(cmd, 0)) {
+		printf("TFTP failed, nothing was written\n");
+		return CMD_RET_FAILURE;
+	}
+
+	env = getenv("filesize");
+	len = env ? simple_strtoul(env, NULL, 16) : 0;
+	if (len < 0x10000 || len > part_size ||
+	    (*(volatile uint32_t *)load & 0x0e000000) != 0x0a000000) {
+		printf("Refusing 0x%lx bytes at 0x%lx (first word 0x%08x): "
+		       "not an ARM U-Boot image that fits 0x%lx\n",
+		       len, load, *(volatile uint32_t *)load, part_size);
+		return CMD_RET_FAILURE;
+	}
+
+	crc_ram = crc32_wd(0, (const uchar *)load, len, CHUNKSZ_CRC32);
+	printf("Writing 0x%lx bytes, erasing 0x%lx at NAND offset 0\n",
+	       len, part_size);
+
+	snprintf(cmd, sizeof(cmd), "nand erase 0 0x%lx", part_size);
+	if (run_command(cmd, 0)) {
+		printf("erase failed, the old boot loader is gone\n");
+		return CMD_RET_FAILURE;
+	}
+
+	snprintf(cmd, sizeof(cmd), "nand write 0x%lx 0 0x%lx", load, len);
+	if (run_command(cmd, 0)) {
+		printf("write failed, the boot loader is damaged\n");
+		return CMD_RET_FAILURE;
+	}
+
+	snprintf(cmd, sizeof(cmd), "nand read 0x%lx 0 0x%lx", verify, len);
+	if (run_command(cmd, 0)) {
+		printf("read back failed, cannot verify\n");
+		return CMD_RET_FAILURE;
+	}
+
+	crc_nand = crc32_wd(0, (const uchar *)verify, len, CHUNKSZ_CRC32);
+	if (crc_nand != crc_ram) {
+		printf("VERIFY FAILED ram 0x%08x nand 0x%08x - write it again\n",
+		       crc_ram, crc_nand);
+		return CMD_RET_FAILURE;
+	}
+
+	printf("OK: 0x%lx bytes written and verified (crc 0x%08x)\n",
+	       len, crc_ram);
+	printf("Run 'reset' to start the new boot loader.\n");
+
+	return CMD_RET_SUCCESS;
+}
+
+U_BOOT_CMD(
+	flash_uboot, 4, 0, do_flash_uboot,
+	"rewrite the boot loader from a TFTP file and verify it",
+	"<tftp-file> <partition-size-hex> confirm"
+);
+#endif /* CONFIG_CMD_NAND */
+
 /* The MX64 has no RGB LED: the amber/white front LEDs are driven by
  * board/broadcom/bcm95302x/setup.c (led_init/led_flash/led_pulse).
  */
