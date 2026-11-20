@@ -53,8 +53,8 @@ make CROSS_COMPILE=$CROSS_COMPILE CC="${CROSS_COMPILE}gcc -mfpu=vfpv3-d16" -j8
 `config.mk` assigns `CC = $(CROSS_COMPILE)gcc`, so `CC` has to be overridden on
 the make command line (exporting it does nothing).
 
-The output is `u-boot.bin`: 591,984 bytes with GCC 13 and 598,172 bytes with
-GCC 5.4. The upstream MX6x device tree declares the `u-boot` partition as
+The output is `u-boot.bin`: 591,984 bytes with GCC 13 and 598,268 bytes with
+GCC 5.4 (v5). The upstream MX6x device tree declares the `u-boot` partition as
 `0x80000` (512 KiB) while other units use `0x100000` (1 MiB), so read the real
 size (`nand info`, or `cat /proc/mtd` on a running system) before writing: never
 write an image that is larger than the partition.
@@ -89,7 +89,7 @@ partition at `0x800000`.
 `CONFIG_BOOTCOMMAND` runs:
 
 ```text
-run soc_dtscheck; mx64init; run ubi_checkboot; run tftp_checkboot; run usb_checkboot; run meraki_checkboot
+run soc_dtscheck; mx64init; run ubi_checkboot; run usb_checkboot; run tftp_checkboot; run meraki_checkboot
 ```
 
 `mx64init` enables the board peripherals and checks the reset button. If reset
@@ -101,9 +101,12 @@ one failed:
 2. `usb_checkboot` - `usbload`, three attempts over both buses and both
    initramfs names (`enable_usb_boot=1`).
 3. `tftp_checkboot` - `tftp_boot`, pulling the image over the network
-   (`enable_tftp_boot=1`). It uses a saved `ipaddr`/`serverip` when there is
-   one, otherwise the recovery default `192.168.1.10` / `192.168.1.2`, and sets
-   `netretry=no` so a missing server fails after one try.
+   (`enable_tftp_boot=1`). It unconditionally sets `ipaddr=192.168.1.10`,
+   `serverip=192.168.1.2` and `netmask=255.255.255.0` (the same values that are
+   compiled in as `CONFIG_IPADDR`/`CONFIG_SERVERIP`/`CONFIG_NETMASK`), so a
+   wiped, stale or `saveenv`'d environment cannot point the recovery path at a
+   different subnet. It also sets `netretry=no` so a missing server fails after
+   one try.
    Candidates, in order: an explicit `tftp_file` override, the OpenWrt FIT
    initramfs (`initramfs_filename[_a0]`), then the clayface `SPIM` transition
    firmware (`transition_filename[_a0]`). `bootimg` identifies each one from its
@@ -154,6 +157,39 @@ and goes through `bootm`. The clayface
 transition firmware and must go through `bootbk`; `bootimg` selects it
 automatically, so both can be tried from one USB stick or one TFTP directory.
 
+## A trap to avoid: U-Boot's shell cannot test for an empty variable
+
+Two releases in a row were shipped with a `config_dts` that was silently never
+set, because both spellings below look correct and neither works:
+
+```text
+# v2 -- hush does not propagate a command's return value into $?, so this is
+#       never true and every unit fell through to config@2 (A0)
+getsocrev; if test $? = 1; then setenv config_dts config@4; else ...; fi
+
+# v3 -- with config_dts empty this collapses to "test -z" (two arguments), and
+#       common/cmd_test.c starts with "if (argc < 3) return 1;", i.e. false,
+#       so the then-branch never ran
+if test -z "${config_dts}"; then getsocrev set; fi
+```
+
+`get_socrev()` itself was never wrong -- the disassembly is a straightforward
+`ubfx r0, r0, #16, #4 / cmp #3 / movhi #1` over `ICFG_CHIP_ID_REG`.
+
+From v4 on, `soc_dtscheck` is a bare, unconditional `getsocrev set` and the
+"do not override an explicit value" check lives in C:
+
+```c
+if (argc >= 2 && !strcmp(argv[1], "set")) {
+        const char *cur = getenv("config_dts");
+        if (cur && *cur)
+                return 0;
+        setenv("config_dts", b0 ? "config@4" : "config@2");
+}
+```
+
+Rule of thumb: keep anything conditional in C, not in the environment scripts.
+
 ## TFTP recovery
 
 Put the initramfs in the TFTP server root and connect the PC to a LAN port.
@@ -169,8 +205,8 @@ ping 192.168.1.2
 tftp_boot
 ```
 
-`tftp_boot` runs `soc_dtscheck`, sets the recovery IPs if none are saved, then
-tries three candidates in order and boots the first one that loads:
+`tftp_boot` runs `soc_dtscheck`, forces the recovery IPs, then tries three
+candidates in order and boots the first one that loads:
 
 1. `tftp_file`, if the environment sets it (manual override),
 2. `openwrt-bcm53xx-generic-meraki_mx64[-a0]-initramfs.bin`,
