@@ -10,7 +10,7 @@
 
 #define STDK_BUILD (1)
 
-#define UBOOT_TAG "mx64-ng-2012.10-v5"
+#define UBOOT_TAG "mx64-ng-2012.10-v6"
 #define BUILD_TAG UBOOT_TAG
 #define CONFIG_MX64_DEFAULT_ETHADDR "00:18:0a:00:01:02"
 
@@ -278,11 +278,11 @@ When DEBUG is enabled, need to disable both CACHE to make u-boot running
         "initramfs_filename_a0=openwrt-bcm53xx-generic-meraki_mx64-a0-initramfs.bin\0" \
         "transition_filename=openwrt-bcm5862x-generic-meraki_mx64-initramfs-kernel.bin\0" \
         "transition_filename_a0=openwrt-bcm5862x-generic-meraki_mx64a0-initramfs-kernel.bin\0" \
-        "pick_tftp_files=if test $config_dts = config@2; then setenv tftp_fit ${initramfs_filename_a0}; setenv tftp_spim ${transition_filename_a0}; else setenv tftp_fit ${initramfs_filename}; setenv tftp_spim ${transition_filename}; fi\0" \
-        "ubi_checkboot=if test $disable_ubi_boot != 1; then run ubi_boot ; fi\0" \
-        "usb_checkboot=if test $enable_usb_boot = 1; then usbload; fi\0" \
-        "tftp_checkboot=if test $enable_tftp_boot = 1; then run tftp_boot ; fi\0" \
-        "meraki_checkboot=if test $enable_meraki_boot = 1; then run meraki_bootkernel2; run meraki_bootkernel1; fi\0" \
+        "pick_tftp_files=if test \"x${config_dts}\" = \"xconfig@2\"; then setenv tftp_fit ${initramfs_filename_a0}; setenv tftp_spim ${transition_filename_a0}; else setenv tftp_fit ${initramfs_filename}; setenv tftp_spim ${transition_filename}; fi\0" \
+        "ubi_checkboot=if test \"x${disable_ubi_boot}\" != \"x1\"; then run ubi_boot ; else echo UBI boot disabled ; fi\0" \
+        "usb_checkboot=if test \"x${enable_usb_boot}\" != \"x0\"; then usbload; else echo USB boot disabled by enable_usb_boot=0 ; fi\0" \
+        "tftp_checkboot=if test \"x${enable_tftp_boot}\" != \"x0\"; then run tftp_boot ; else echo TFTP boot disabled by enable_tftp_boot=0 ; fi\0" \
+        "meraki_checkboot=if test \"x${enable_meraki_boot}\" = \"x1\"; then run meraki_bootkernel2; run meraki_bootkernel1; fi\0" \
         "disable_ubi_boot=0\0" \
         "enable_usb_boot=1\0" \
         "enable_tftp_boot=1\0" \

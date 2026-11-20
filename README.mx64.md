@@ -116,6 +116,8 @@ one failed:
 That chain is why an empty or corrupt NAND boots itself from a USB stick or over
 TFTP without anybody holding the reset button. The flashing scripts in
 mx64-openwrt-flash talk TFTP by default, which does not change anything here.
+On a unit that was just written from diagnostic mode, boot it from USB once
+before relying on TFTP - the reasons are in "The first boot must come from USB".
 
 ### Rewriting the boot loader over TFTP
 
@@ -189,9 +191,74 @@ if (argc >= 2 && !strcmp(argv[1], "set")) {
 
 Rule of thumb: keep anything conditional in C, not in the environment scripts.
 
+The same trap sat in the boot chain itself: every `*_checkboot` tested
+`if test $enable_xxx = 1`. When the variable is **absent** (an environment
+blob generated from an older build, a half-written `u-boot-env`, or a stock
+environment that survived the flash), hush drops the empty word and the test
+collapses to two arguments, which `do_test()` scores as false. The step is then
+skipped **without any message** - the boot moves on to the next candidate and
+`tftp_checkboot` in particular just never runs.
+
+From v6 on, those tests compare prefixed strings, so an empty variable can no
+longer swallow an argument:
+
+```text
+ubi_checkboot=if test "x${disable_ubi_boot}" != "x1"; then run ubi_boot ; fi
+usb_checkboot=if test "x${enable_usb_boot}" != "x0"; then usbload; fi
+tftp_checkboot=if test "x${enable_tftp_boot}" != "x0"; then run tftp_boot ; fi
+meraki_checkboot=if test "x${enable_meraki_boot}" = "x1"; then ...; fi
+pick_tftp_files=if test "x${config_dts}" = "xconfig@2"; then ...; fi
+```
+
+Semantics: UBI, USB and TFTP are on unless the variable is explicitly `0`;
+Meraki boot stays opt-in.
+
+## The first boot must come from USB
+
+A unit that was just written from diagnostic mode has to be booted from the USB
+stick once. TFTP rescue works on later boots, not on that one.
+
+U-Boot reads its environment from NAND (`0x440000`, one erase block). A valid
+environment there is used **instead of** the compiled defaults; it is not merged
+per variable. So a `u-boot-env` written by an older build - or the stock Meraki
+environment that happened to survive - can hide variables this build depends on
+(`enable_tftp_boot`, `tftp_boot`, `pick_tftp_files`, ...). The USB path is the
+one that also works when only the C commands are available.
+
+Two more reasons TFTP is the less forgiving path:
+
+- `tftp_boot` sets `netretry no`. In `net/net.c:NetStartAgain()` that maps to
+  `retrycnt = 0`, and `NetTryCount` starts at 1, so the first failure ends the
+  transfer attempt. Each `tftpboot` still gets the full ARP window
+  (`ARP_TIMEOUT` 5 s x `ARP_TIMEOUT_COUNT` 5), but a link that is not up yet
+  costs that whole window and then gives up.
+- The bcmiproc driver never reports real link state on this board:
+  `ethHw_portLinkUp()` only exists for HELIX4/KATANA2/HURRICANE2, and
+  `bcmiproc_robo.c` deliberately forces the switch ports to report "link up" so
+  transmit works before autonegotiation finishes. A dead link therefore shows up
+  as a silent ARP timeout, not as an error.
+
+Diagnose a unit that only boots over USB:
+
+```text
+printenv            <- enable_usb_boot / enable_tftp_boot / tftp_boot present?
+mx64info            <- gmac, config_dts, ethaddr, loadaddr
+mii info            <- does the switch/PHY report a link?
+ping 192.168.1.2    <- ARP works?
+tftpboot 0x90000000 openwrt-bcm53xx-generic-meraki_mx64-initramfs.bin
+```
+
+Missing variables mean the NAND environment is older than the binary: rewrite
+`u-boot-env` (see the flashing kit, `tools/mkenv.py`) - that does not touch
+mtd0. `ping` failing while USB works points at the switch/GMAC side; `ping`
+succeeding while `tftpboot` fails points at the server or the block size.
+
 ## TFTP recovery
 
 Put the initramfs in the TFTP server root and connect the PC to a LAN port.
+This is the rescue path for a unit that already runs this U-Boot; the very first
+boot after writing mtd0 should come from USB (see above).
+
 For a B0+ unit:
 
 ```text
