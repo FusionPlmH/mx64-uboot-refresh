@@ -10,7 +10,7 @@
 
 #define STDK_BUILD (1)
 
-#define UBOOT_TAG "mx64-ng-2012.10-v2"
+#define UBOOT_TAG "mx64-ng-2012.10-v3"
 #define BUILD_TAG UBOOT_TAG
 #define CONFIG_MX64_DEFAULT_ETHADDR "00:18:0a:00:01:02"
 
@@ -293,7 +293,7 @@ When DEBUG is enabled, need to disable both CACHE to make u-boot running
         "gmac=1\0" \
         "tftp_boot=run soc_dtscheck; run pick_tftp_files; if test -z \"${serverip}\"; then setenv ipaddr 192.168.1.10; setenv serverip 192.168.1.2; setenv netmask 255.255.255.0; fi; setenv netretry no; if test -n \"${tftp_file}\"; then echo TFTP override: ${tftp_file}; tftpboot ${loadaddr} ${tftp_file} && bootimg ${loadaddr} bootkernel1; fi; echo TFTP: ${tftp_fit}; tftpboot ${loadaddr} ${tftp_fit} && bootimg ${loadaddr} bootkernel1; echo TFTP: ${tftp_spim}; tftpboot ${loadaddr} ${tftp_spim} && bootimg ${loadaddr} bootkernel1\0" \
         "mtdparts=" MTDPARTS_DEFAULT "\0" \
-        "soc_dtscheck=if test -z \"${config_dts}\"; then getsocrev; if test $? = 1; then setenv config_dts config@4; else setenv config_dts config@2; fi; fi\0"
+        "soc_dtscheck=if test -z \"${config_dts}\"; then getsocrev set; fi\0"
 
 //#define CONFIG_EXTRA_ENV_SETTINGS \
 //    "brcmtag=1\0"                 \

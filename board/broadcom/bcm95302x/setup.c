@@ -253,10 +253,21 @@ static int do_usb_boot(cmd_tbl_t *cmdtp, int flag, int argc,
 static int do_get_socrev(cmd_tbl_t *cmdtp, int flag, int argc,
 			 char * const argv[])
 {
-	/* The soc_dtscheck environment script tests the exit code directly
-	 * (1 = B0+, 0 = A0), so this must not be mapped to CMD_RET_*.
+	int b0 = get_socrev();
+
+	/*
+	 * U-Boot's hush parser does not reliably propagate a non-zero command
+	 * return value into $?, so "if test $? = 1" never fired and every unit
+	 * ended up on config@2 (A0). Publish the result as an env var instead.
 	 */
-	return get_socrev();
+	if (argc >= 2 && !strcmp(argv[1], "set")) {
+		setenv("config_dts", b0 ? "config@4" : "config@2");
+		printf("SoC: %s -> %s\n", b0 ? "B0+" : "A0",
+		       b0 ? "config@4" : "config@2");
+		return 0;
+	}
+
+	return b0;
 }
 
 U_BOOT_CMD(
@@ -272,9 +283,11 @@ U_BOOT_CMD(
 );
 
 U_BOOT_CMD(
-	getsocrev, 1, 0, do_get_socrev,
-	"return 1 on B0+ silicon, 0 on A0 (no output)",
-	""
+	getsocrev, 2, 0, do_get_socrev,
+	"return 1 on B0+ silicon, 0 on A0; 'getsocrev set' sets config_dts",
+	"getsocrev [set]\n"
+	"    - no arg: exit code only (1 = B0+, 0 = A0)\n"
+	"    - set   : set env config_dts to config@4 (B0+) or config@2 (A0)"
 );
 
 static const char *env_str(const char *name)
