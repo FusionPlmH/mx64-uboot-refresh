@@ -195,3 +195,7 @@ load address, DTS config, IP/MAC and GMAC selection.
 Back up the current `u-boot` and environment partitions and keep a serial
 console attached before writing a new bootloader. This tree has been built and
 inspected, but the TFTP/USB paths still need validation on hardware.
+
+A ready-to-use flashing kit (guide, scripts, `uboot_mx64`/`uboot_mx64_small`,
+transition firmware, initramfs and sysupgrade images) lives in
+<https://github.com/FusionPlmH/mx64-openwrt-flash>.
