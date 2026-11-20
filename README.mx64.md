@@ -32,8 +32,11 @@ make kingpin_nand_config
 make CROSS_COMPILE=arm-buildroot-linux-gnueabihf- -j8
 ```
 
-The output is `u-boot.bin`. A clean build is about 596 KB and fits the MX64
-`U-boot` NAND partition.
+The output is `u-boot.bin`. A clean build is about 596 KB. The upstream MX6x
+device tree declares the `u-boot` partition as `0x80000` (512 KiB) while other
+units use `0x100000` (1 MiB), so read the real size (`nand info`, or
+`cat /proc/mtd` on a running system) before writing: never write an image that
+is larger than the partition.
 
 The stock tree forces `-msoft-float`; this repo lets the toolchain float ABI
 match its libgcc. The tested Bootlin `eabihf` toolchain therefore produces a
@@ -72,6 +75,29 @@ run soc_dtscheck; mx64init; run ubi_checkboot; run usb_checkboot; run meraki_che
 is pressed, USB boot is attempted; otherwise the normal UBI kernel boot runs.
 USB is also retried after a UBI boot failure when `enable_usb_boot=1`.
 
+### Image formats
+
+`bootimg <addr> [partition]` looks at the first word of the loaded image and
+picks the boot method from it, so the USB and TFTP paths do not have to know
+which kind of file they fetched:
+
+- first bytes `d0 0d fe ed` (FIT) or `27 05 19 56` (legacy uImage) are booted
+  with `bootm`. FIT images get `${config_dts}` appended as `#config@N`.
+- first bytes `53 50 49 4d` (ASCII `SPIM`, the Meraki transition /
+  initramfs-kernel image) are copied to the `load_addr` recorded in its own
+  header (normally `0x60008000`) and entered with `bootbk <addr> bootkernel1`,
+  because that loader jumps to an absolute entry point.
+
+`bootbk` verifies the header CRC32, rejects an empty or oversized payload and
+restores the CRC field afterwards, so a failed boot can be retried on the same
+buffer.
+
+OpenWrt's `openwrt-bcm53xx-generic-meraki_mx64-initramfs.bin` is a FIT image
+and goes through `bootm`. The clayface
+`openwrt-bcm5862x-generic-meraki_mx64-initramfs-kernel.bin` is the `SPIM`
+transition firmware and must go through `bootbk`; `bootimg` selects it
+automatically, so both can be tried from one USB stick or one TFTP directory.
+
 ## TFTP recovery
 
 Put the initramfs in the TFTP server root and connect the PC to a LAN port.
@@ -88,7 +114,8 @@ tftp_boot
 ```
 
 `tftp_boot` runs `soc_dtscheck`, chooses the A0 or B0+ initramfs filename, loads
-it to `${loadaddr}`, and boots `${loadaddr}#${config_dts}`.
+it to `${loadaddr}` and hands it to `bootimg`, which uses `bootm` for FIT
+images and `bootbk` for the `SPIM` transition firmware.
 
 Manual B0+ load:
 
@@ -99,6 +126,13 @@ bootm 0x90000000#config@4
 
 A0 uses the `_a0` filename and `config@2`.
 
+Transition firmware (clayface `openwrt-bcm5862x-...-initramfs-kernel.bin`):
+
+```text
+tftpboot 0x90000000 openwrt-bcm5862x-generic-meraki_mx64-initramfs-kernel.bin
+bootimg 0x90000000 bootkernel1
+```
+
 If `ping` fails, check `mii info`, the LAN port, the PC firewall, and the TFTP
 server. If GMAC1 does not link, try `setenv gmac 2; saveenv; reset`.
 
@@ -107,16 +141,23 @@ Serial `loady` remains available as a last-resort transfer path.
 ## USB boot diagnostics
 
 The USB path tries three times, both USB buses (`usb 0:1`, `usb 1:1`), and both
-initramfs filenames.
+initramfs filenames. Every successfully loaded file is handed to `bootimg`, so a
+FIT initramfs and the `SPIM` transition firmware can sit on the same stick and
+the first one that actually boots wins.
 
-LED codes:
+LED codes (amber power LED stays on, white status LED blinks):
 
-- 3 white blinks: USB boot attempt starts
-- 1 pulse: `usb reset` failed
-- 2 pulses: USB reset worked but no FAT load succeeded
-- 3 pulses: image loaded but `bootm` failed
+- 3 white blinks at start: a USB boot attempt begins
+- 1 pulse, then retry: no USB storage device was detected (`usb reset` cannot
+  report this itself, so the code probes the storage layer)
+- 2 pulses, then retry: a stick was present but no configured file could be
+  loaded from `usb 0:1` or `usb 1:1`
+- 3 pulses, then retry: a file was loaded but it did not boot (`bootm` or
+  `bootbk` returned)
 
-Serial output prints each stage and `usb info` after reset.
+Serial output prints the exact `fatload` command, the `bootm`/`bootbk` decision
+and `usb info` after every reset. A file that loads but fails to boot does not
+abort the attempt: the remaining files and buses are still tried.
 
 ## Identification
 

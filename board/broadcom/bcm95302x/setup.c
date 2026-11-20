@@ -12,7 +12,12 @@
 #define IPROC_IDM_USB2_RESET_CONTROL	(0x18115800)
 #define IPROC_STRAP_SKU_VECTOR		(0x1811A500)
 
+/* Front panel LEDs, see bcm958625-meraki-mx6x-common.dtsi */
+#define GPIO_LED_AMBER			0	/* power, active low */
+#define GPIO_LED_WHITE			31	/* status, active high */
+
 extern int do_ccsetup(void);
+extern int mx64_boot_image(ulong addr, const char *part);
 
 int ehci_init(void)
 {
@@ -68,26 +73,54 @@ int dma_init(void)
 	return (__raw_writel(0x0, IPROC_IDM_DMAC_RESET_CONTROL));
 };
 */
-void led_flash(int time)
+/* Amber is the power LED and stays on; the white status LED is used to
+ * signal boot progress.  Both GPIOs are driven push-pull by the GPIO block.
+ */
+void led_init(void)
 {
-	uint32_t out;
-	uint32_t outen;
-	int i;
+	uint32_t cru, out, outen;
 
-	out = __raw_readl(ChipcommonA_GPIOOut);
+	/* route GPIO 0/31 to the GPIO block (periph_enable() does this too,
+	 * repeat it here so the LEDs also work from a bare command line)
+	 */
+	cru = __raw_readl(CRU_GPIO_CONTROL0);
+	cru |= (1U << GPIO_LED_AMBER) | (1U << GPIO_LED_WHITE);
+	__raw_writel(cru, CRU_GPIO_CONTROL0);
+
 	outen = __raw_readl(ChipcommonA_GPIOOutEn);
-	out ^= ( 1 << 31 ); outen ^= ( 1 << 0 );
-	__raw_writel(out, ChipcommonA_GPIOOut);
+	outen |= (1U << GPIO_LED_AMBER) | (1U << GPIO_LED_WHITE);
 	__raw_writel(outen, ChipcommonA_GPIOOutEn);
 
-	for (i = 0; i < 6; i++) {
-	
-		out ^= ( 1 << 0 ); outen ^= ( 1 << 31 );
-		__raw_writel(out, ChipcommonA_GPIOOut);
-		__raw_writel(outen, ChipcommonA_GPIOOutEn);
+	/* amber on (active low), white off */
+	out = __raw_readl(ChipcommonA_GPIOOut);
+	out &= ~(1U << GPIO_LED_AMBER);
+	out &= ~(1U << GPIO_LED_WHITE);
+	__raw_writel(out, ChipcommonA_GPIOOut);
+}
+
+static void led_status(int on)
+{
+	uint32_t out = __raw_readl(ChipcommonA_GPIOOut);
+
+	if (on)
+		out |= (1U << GPIO_LED_WHITE);
+	else
+		out &= ~(1U << GPIO_LED_WHITE);
+	__raw_writel(out, ChipcommonA_GPIOOut);
+}
+
+void led_flash(int time)
+{
+	int i;
+
+	led_init();
+	for (i = 0; i < 3; i++) {
+		led_status(1);
 		mdelay(time);
-	};
-};
+		led_status(0);
+		mdelay(time);
+	}
+}
 
 int get_socrev(void)
 {
@@ -101,19 +134,12 @@ int get_socrev(void)
 
 static void led_pulse(int n)
 {
-	uint32_t out = __raw_readl(ChipcommonA_GPIOOut);
-	uint32_t outen = __raw_readl(ChipcommonA_GPIOOutEn);
 	int i;
 
 	for (i = 0; i < n; i++) {
-		out ^= (1 << 0); outen ^= (1 << 31);
-		__raw_writel(out, ChipcommonA_GPIOOut);
-		__raw_writel(outen, ChipcommonA_GPIOOutEn);
+		led_status(1);
 		mdelay(150);
-
-		out ^= (1 << 0); outen ^= (1 << 31);
-		__raw_writel(out, ChipcommonA_GPIOOut);
-		__raw_writel(outen, ChipcommonA_GPIOOutEn);
+		led_status(0);
 		mdelay(350);
 	}
 }
@@ -121,19 +147,30 @@ static void led_pulse(int n)
 int usb_boot(void)
 {
 	const char *files[2];
-	int i, j, bus, ret = 1;
+	const char *load;
+	ulong addr;
+	char cmd[192];
+	int attempt, bus, j, loaded;
 
 	files[0] = getenv("initramfs_filename");
 	files[1] = getenv("initramfs_filename_a0");
 
+	load = getenv("loadaddr");
+	addr = load ? simple_strtoul(load, NULL, 16) : CONFIG_LOADADDR;
+
 	printf("USB: start (%s)\n", get_socrev() ? "B0+" : "A0");
 	led_flash(250);
 
-	for (i = 0; i < 3 && ret; i++) {
-		printf("USB: attempt %d\n", i + 1);
+	for (attempt = 0; attempt < 3; attempt++) {
+		printf("USB: attempt %d\n", attempt + 1);
 
-		if (run_command("usb reset", 0)) {
-			printf("USB: reset failed (code 1)\n");
+		/* "usb reset" reports success even when the host controller
+		 * stayed dead, so ask the storage layer instead of trusting
+		 * its return code
+		 */
+		run_command("usb reset", 0);
+		if (!usb_stor_get_dev(0)) {
+			printf("USB: no storage device\n");
 			led_pulse(1);
 			mdelay(500);
 			continue;
@@ -141,42 +178,40 @@ int usb_boot(void)
 
 		run_command("usb info", 0);
 
-		for (bus = 0; bus < 2 && ret; bus++) {
+		loaded = 0;
+		for (bus = 0; bus < 2; bus++) {
 			for (j = 0; j < 2; j++) {
-				char cmd[256];
-
 				if (!files[j] || !files[j][0])
 					continue;
 
 				snprintf(cmd, sizeof(cmd),
-					 "fatload usb %d:1 ${loadaddr} %s",
-					 bus, files[j]);
-				printf("USB: fatload usb %d:1 %s\n", bus, files[j]);
-				if (run_command(cmd, 0) == 0) {
-					ret = 0;
-					break;
-				}
-				printf("USB: fatload failed (code 2)\n");
+					 "fatload usb %d:1 %08lx %s",
+					 bus, addr, files[j]);
+				printf("USB: %s\n", cmd);
+				if (run_command(cmd, 0))
+					continue;
+
+				loaded = 1;
+
+				/* a loaded image that does not boot must not
+				 * stop us from trying the remaining candidates
+				 */
+				printf("USB: booting %s\n", files[j]);
+				mx64_boot_image(addr, "bootkernel1");
+				printf("USB: %s did not boot\n", files[j]);
 			}
 		}
 
-		if (ret) {
+		if (loaded)
+			led_pulse(3);
+		else
 			led_pulse(2);
-			mdelay(500);
-		}
+		mdelay(500);
 	}
 
-	if (ret) {
-		printf("USB: giving up\n");
-		return 1;
-	}
-
-	printf("USB: bootm\n");
-	run_command("bootm ${loadaddr}#${config_dts}", 0);
-	printf("USB: bootm failed (code 3)\n");
-	led_pulse(3);
+	printf("USB: giving up\n");
 	return 1;
-};
+}
 
 int rst_check(void)
 {
@@ -203,16 +238,43 @@ int dev_init(void)
 	return 0;
 }
 
+static int do_mx64init(cmd_tbl_t *cmdtp, int flag, int argc,
+		       char * const argv[])
+{
+	return dev_init() ? CMD_RET_FAILURE : CMD_RET_SUCCESS;
+}
+
+static int do_usb_boot(cmd_tbl_t *cmdtp, int flag, int argc,
+		       char * const argv[])
+{
+	return usb_boot() ? CMD_RET_FAILURE : CMD_RET_SUCCESS;
+}
+
+static int do_get_socrev(cmd_tbl_t *cmdtp, int flag, int argc,
+			 char * const argv[])
+{
+	/* The soc_dtscheck environment script tests the exit code directly
+	 * (1 = B0+, 0 = A0), so this must not be mapped to CMD_RET_*.
+	 */
+	return get_socrev();
+}
+
 U_BOOT_CMD(
-	mx64init, 1, 0, dev_init, "", ""
+	mx64init, 1, 0, do_mx64init,
+	"init MX64 peripherals and check the reset button",
+	""
 );
 
 U_BOOT_CMD(
-	usbload, 1, 0, usb_boot, "",""
+	usbload, 1, 0, do_usb_boot,
+	"load an initramfs/transition image from USB and boot it",
+	""
 );
 
 U_BOOT_CMD(
-        getsocrev, 1, 0, get_socrev, "",""
+	getsocrev, 1, 0, do_get_socrev,
+	"return 1 on B0+ silicon, 0 on A0 (no output)",
+	""
 );
 
 static const char *env_str(const char *name)
