@@ -77,8 +77,7 @@ marker file from the stock tarball has been removed.
 - Stock U-Boot Ethernet mapping: GMAC1 (`CONFIG_GMAC_NUM 1`)
 - `gmac` environment variable can override the mapping (`0`, `1`, or `2`)
 - Default environment MAC is `00:18:0a:00:01:02`; set the label MAC before
-  using TFTP on a shared network:
-  `setenv ethaddr 00:18:0a:00:01:02`
+  using TFTP on a shared network: `setenv ethaddr <label MAC>`
 
 The official MX64 firmware source confirms the NAND layout and the reset/LED
 GPIOs. Its `board_kingpin.c` maps `senao_nvram` at `0x400000` and the UBI
@@ -196,7 +195,7 @@ Put the initramfs in the TFTP server root and connect the PC to a LAN port.
 For a B0+ unit:
 
 ```text
-setenv ethaddr 00:18:0a:00:01:02
+setenv ethaddr <label MAC>
 setenv gmac 1
 setenv ipaddr 192.168.1.10
 setenv serverip 192.168.1.2
